@@ -468,7 +468,7 @@ export const DEMO_PERSONAS = [
 // ACTIVITY LOG
 // ============================================================
 export const SEED_ACTIVITY_LOG = [
-  { id: "A01", time: "Today 09:30", actor: "Ananya Roy (Student)", action: "Submitted milestone for review: 'LoRaWAN sensor mesh deployed on Pier 3'", problemId: "PROB-001", type: "milestone" },
+  { id: "A01", time: "Today 09:30", actor: "Aaryan Barthwal (Student)", action: "Submitted milestone for review: 'LoRaWAN sensor mesh deployed on Pier 3'", problemId: "PROB-001", type: "milestone" },
   { id: "A02", time: "Today 09:00", actor: "Vikramaditya Singh (NHIF)", action: "Tranche 2 funds released — ₹2,62,500 disbursed to BIT Mesra escrow", problemId: "PROB-001", type: "funding" },
   { id: "A03", time: "Yesterday 17:30", actor: "Dr. Rajesh Kumar (Faculty)", action: "Milestone approved: structural simulation complete. Credits updated.", problemId: "PROB-001", type: "approval" },
   { id: "A04", time: "Yesterday 15:00", actor: "Smt. Kamla Devi (Citizen)", action: "New problem submitted with voice note: 'Zero Street Lighting — Dhanbad mining colony'", problemId: "PROB-005", type: "submit" },
