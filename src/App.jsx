@@ -296,6 +296,9 @@ export default function App() {
   const addProblem = useCallback(newP =>
     setProblems(prev=>[newP,...prev]),[]);
 
+  const deleteProblem = useCallback(id =>
+    setProblems(prev=>prev.filter(p=>p.id!==id)),[]);
+
   const updateStudent = useCallback((id,patch) =>
     setStudents(prev=>prev.map(s=>s.id===id?{...s,...patch}:s)),[]);
 
@@ -373,7 +376,7 @@ export default function App() {
     );
   }
 
-  const shared = { persona, problems, setProblems, students, setStudents, activityLog, addLog, updateProblem, addProblem, updateStudent, handleLogout, handleSwitchPersona, toast };
+  const shared = { persona, problems, setProblems, students, setStudents, activityLog, addLog, updateProblem, addProblem, deleteProblem, updateStudent, handleLogout, handleSwitchPersona, toast };
   return (
     <>
       {personaId==='citizen'    && <CitizenDashboard    {...shared}/>}
@@ -389,7 +392,7 @@ export default function App() {
 // ══════════════════════════════════════════════════════════════════════════════
 // CITIZEN DASHBOARD
 // ══════════════════════════════════════════════════════════════════════════════
-function CitizenDashboard({ persona, problems, updateProblem, addProblem, addLog, handleLogout, handleSwitchPersona, toast }) {
+function CitizenDashboard({ persona, problems, updateProblem, addProblem, deleteProblem, addLog, handleLogout, handleSwitchPersona, toast }) {
   const [search, setSearch] = useState('');
   const [filterCat, setFilterCat] = useState('All');
   const [filterDist, setFilterDist] = useState('All');
@@ -418,6 +421,12 @@ function CitizenDashboard({ persona, problems, updateProblem, addProblem, addLog
     updateProblem(id,{assignedUniversity:univId});
     addLog(persona.user.name,`Problem assigned to ${UNIVERSITIES.find(u=>u.id===univId)?.name}`,id,'assignment');
     toast(`Assigned to ${UNIVERSITIES.find(u=>u.id===univId)?.name}`);
+  };
+
+  const handleDelete=id=>{
+    deleteProblem(id);
+    addLog(persona.user.name,`Problem report deleted`,id,'submit');
+    toast('Problem report deleted','info');
   };
 
   return (
@@ -495,6 +504,7 @@ function CitizenDashboard({ persona, problems, updateProblem, addProblem, addLog
               onView={()=>setDetailProb(prob.id)}
               onLightbox={setLightboxUrl}
               onAssign={(univId)=>handleAssign(prob.id,univId)}
+              onDelete={prob.submittedBy.id===persona.user.id?()=>handleDelete(prob.id):null}
             />
           ))}
 
@@ -520,9 +530,10 @@ function CitizenDashboard({ persona, problems, updateProblem, addProblem, addLog
 }
 
 // ─── Citizen Problem Card ─────────────────────────────────────────────────────
-function CitizenProblemCard({ prob, voted, onVote, onView, onLightbox, onAssign }) {
+function CitizenProblemCard({ prob, voted, onVote, onView, onLightbox, onAssign, onDelete }) {
   const [showAssign, setShowAssign] = useState(false);
   const [selUniv, setSelUniv] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm card-hover overflow-hidden">
@@ -583,7 +594,7 @@ function CitizenProblemCard({ prob, voted, onVote, onView, onLightbox, onAssign 
             )}
           </div>
 
-          <div className="flex items-center gap-3 mt-2.5">
+          <div className="flex items-center gap-3 mt-2.5 flex-wrap">
             <button onClick={onView} className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
               <Eye className="w-3 h-3"/> View Details
             </button>
@@ -592,6 +603,17 @@ function CitizenProblemCard({ prob, voted, onVote, onView, onLightbox, onAssign 
                 className={`text-xs font-semibold flex items-center gap-1 transition-colors ${showAssign?'text-slate-400':'text-violet-600 hover:text-violet-700'}`}>
                 <Building2 className="w-3 h-3"/> {showAssign?'Cancel':'Assign University'}
               </button>
+            )}
+            {onDelete && (
+              !confirmDelete
+                ? <button onClick={()=>setConfirmDelete(true)} className="text-xs font-semibold text-rose-400 hover:text-rose-600 flex items-center gap-1 transition-colors ml-auto">
+                    <X className="w-3 h-3"/> Delete
+                  </button>
+                : <div className="ml-auto flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Sure?</span>
+                    <button onClick={onDelete} className="text-xs font-bold text-rose-600 hover:text-rose-700 transition-colors">Yes, delete</button>
+                    <button onClick={()=>setConfirmDelete(false)} className="text-xs text-slate-400 hover:text-slate-600 transition-colors">Cancel</button>
+                  </div>
             )}
           </div>
 
@@ -615,7 +637,7 @@ function CitizenProblemCard({ prob, voted, onVote, onView, onLightbox, onAssign 
   );
 }
 
-// ─── Post Problem Modal (3-step) ──────────────────────────────────────────────
+// ─── Post Problem Modal (2-step) ──────────────────────────────────────────────
 function PostProblemModal({ persona, onClose, onSubmit, problemsCount }) {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({ title:'', desc:'', category:'', district:'Ranchi' });
@@ -624,8 +646,6 @@ function PostProblemModal({ persona, onClose, onSubmit, problemsCount }) {
   const [audioNotes, setAudioNotes] = useState([]);
   const [isRecording, setIsRecording] = useState(false);
   const [recTime, setRecTime] = useState(0);
-  const [targetMode, setTargetMode] = useState('public');
-  const [targetUniv, setTargetUniv] = useState('');
   const timerRef = useRef(null);
   const fileRef = useRef(null);
 
@@ -657,14 +677,13 @@ function PostProblemModal({ persona, onClose, onSubmit, problemsCount }) {
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
 
   const handleSubmit = ()=>{
-    if(targetMode==='specific'&&!targetUniv) return;
     const newP = {
       id:`PROB-${String(problemsCount+1).padStart(3,'0')}`,
       title:form.title.trim(), description:form.desc.trim(), category:form.category, district:form.district,
       submittedBy:{id:persona.user.id,name:persona.user.name,role:persona.user.title},
       submittedAt:new Date().toISOString().split('T')[0],
       votes:0, status:'OPEN',
-      targetUniversity:targetMode==='specific'?(targetUniv||null):null,
+      targetUniversity:null,
       mediaFiles:{photos,audioNotes},
       assignedUniversity:null, engagedTeam:null, proposedSolution:null, funding:null,
       milestones:[], pendingMilestones:[], studentCredits:{}, studentHours:{}, prototypeImage:null,
@@ -672,7 +691,7 @@ function PostProblemModal({ persona, onClose, onSubmit, problemsCount }) {
     onSubmit(newP);
   };
 
-  const steps=['Problem Details','Photos & Audio','Targeting'];
+  const steps=['Problem Details','Photos & Audio'];
 
   return (
     <Modal title="Report a Civic Problem" onClose={onClose} wide>
@@ -788,63 +807,8 @@ function PostProblemModal({ persona, onClose, onSubmit, problemsCount }) {
 
           <div className="flex gap-3">
             <button onClick={()=>setStep(1)} className="flex-1 border border-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-sm hover:bg-slate-50 transition-colors">← Back</button>
-            <button onClick={()=>setStep(3)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors">Next: Targeting →</button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 3 */}
-      {step===3&&(
-        <div className="space-y-5">
-          <div>
-            <label className="text-xs font-bold text-slate-600 block mb-3">Who should see this problem?</label>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                {id:'public',Icon:Globe,title:'Post Publicly',desc:'All universities can discover and engage with it.'},
-                {id:'specific',Icon:Building2,title:'Target a University',desc:'Send directly to one specific institution.'},
-              ].map(opt=>(
-                <button key={opt.id} onClick={()=>setTargetMode(opt.id)}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${targetMode===opt.id?opt.id==='public'?'border-blue-500 bg-blue-50':'border-violet-500 bg-violet-50':'border-slate-200 hover:border-slate-300 bg-white'}`}>
-                  <opt.Icon className={`w-5 h-5 mb-2 ${targetMode===opt.id?opt.id==='public'?'text-blue-600':'text-violet-600':'text-slate-400'}`}/>
-                  <div className="font-bold text-sm text-slate-800">{opt.title}</div>
-                  <div className="text-xs text-slate-500 mt-1">{opt.desc}</div>
-                  {targetMode===opt.id&&<div className="mt-2 flex items-center gap-1 text-xs font-semibold text-blue-600"><Check className="w-3 h-3"/> Selected</div>}
-                </button>
-              ))}
-            </div>
-            {targetMode==='specific'&&(
-              <div className="mt-3">
-                <label className="text-xs font-bold text-slate-600 block mb-1.5">Select University</label>
-                <select value={targetUniv} onChange={e=>setTargetUniv(e.target.value)} className={!targetUniv&&targetMode==='specific'?inputErrCls:inputCls}>
-                  <option value="">Choose university…</option>
-                  {UNIVERSITIES.map(u=><option key={u.id} value={u.id}>{u.name} — {u.city}</option>)}
-                </select>
-              </div>
-            )}
-          </div>
-
-          {/* Summary card */}
-          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2">
-            <p className="font-bold text-slate-700 mb-1">Submission Summary</p>
-            {[
-              ['Title', form.title],
-              ['Category', form.category],
-              ['District', form.district],
-              ['Photos', `${photos.length} attached`],
-              ['Audio Notes', `${audioNotes.length} recorded`],
-              ['Visibility', targetMode==='public'?'Public — All Universities':UNIVERSITIES.find(u=>u.id===targetUniv)?.name||'—'],
-            ].map(([k,v])=>(
-              <div key={k} className="flex justify-between">
-                <span className="text-slate-400">{k}</span>
-                <span className="font-semibold text-slate-700 text-right max-w-[60%] truncate">{v}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="flex gap-3">
-            <button onClick={()=>setStep(2)} className="flex-1 border border-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-sm hover:bg-slate-50 transition-colors">← Back</button>
-            <button onClick={handleSubmit} disabled={targetMode==='specific'&&!targetUniv}
-              className="flex-1 bg-rose-500 hover:bg-rose-600 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold py-2.5 rounded-xl text-sm transition-all">
+            <button onClick={handleSubmit}
+              className="flex-1 bg-rose-500 hover:bg-rose-600 active:scale-[0.98] text-white font-bold py-2.5 rounded-xl text-sm transition-all shadow-sm">
               Submit Problem ✓
             </button>
           </div>
@@ -975,7 +939,6 @@ function UniversityDashboard({ persona, problems, students, setStudents, updateP
     {id:'inbox',label:'Problem Inbox',icon:Bell,count:myProblems.length+publicOpen.length},
     {id:'approvals',label:'Milestone Approvals',icon:CheckSquare,count:pendingCount},
     {id:'students',label:'Student Roster',icon:Users,count:myStudents.length},
-    {id:'credits',label:'Hours & Credits',icon:Award},
     {id:'completed',label:'Completed',icon:CheckCircle2,count:completed.length},
   ];
 
@@ -1140,7 +1103,7 @@ function UniversityDashboard({ persona, problems, students, setStudents, updateP
             <div className="space-y-3">
               <div>
                 <h2 className="text-sm font-bold text-slate-700">Student Roster — {univ?.name}</h2>
-                <p className="text-xs text-slate-400 mt-0.5">Hours are public · Academic credits are private (manage in Hours & Credits tab)</p>
+                <p className="text-xs text-slate-400 mt-0.5">Overview of all students working on problems assigned to {univ?.name}</p>
               </div>
               <Card>
                 <div className="overflow-x-auto">
@@ -1182,83 +1145,7 @@ function UniversityDashboard({ persona, problems, students, setStudents, updateP
             </div>
           )}
 
-          {/* HOURS & CREDITS */}
-          {tab==='credits'&&(
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-sm font-bold text-slate-700">Hours & Credit Management</h2>
-                <p className="text-xs text-slate-400 mt-0.5">Edit directly and tab/click away to save. Hours are public; credits are private.</p>
-              </div>
-              <div className="flex items-start gap-2.5 p-3 bg-violet-50 border border-violet-100 rounded-xl text-xs text-violet-700">
-                <Info className="w-4 h-4 flex-shrink-0 mt-0.5"/>
-                <div>
-                  <span className="font-bold">Hours Worked</span> are visible to Government & Industry as activity proof.{' '}
-                  <span className="font-bold">Academic Credits</span> are private and only visible to you and the individual student.
-                </div>
-              </div>
-              {engaged.filter(p=>(p.engagedTeam?.students||[]).length>0).map(prob=>{
-                const teamStus=(prob.engagedTeam?.students||[]).map(sid=>students.find(s=>s.id===sid)).filter(Boolean);
-                return (
-                  <Card key={prob.id} className="p-5">
-                    <div className="flex items-start gap-3 mb-4">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-slate-800 text-sm truncate">{prob.title}</h3>
-                        <div className="mt-1"><StatusBadge status={prob.status}/></div>
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      {teamStus.map(s=>{
-                        const credits=prob.studentCredits?.[s.id]||0;
-                        const hours=prob.studentHours?.[s.id]||0;
-                        return (
-                          <div key={s.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                            <div className="flex items-center gap-3 mb-3">
-                              <Ava src={s.avatar} name={s.name} size={9}/>
-                              <div className="flex-1 min-w-0">
-                                <div className="font-semibold text-slate-800 text-sm">{s.name}</div>
-                                <div className="text-xs text-slate-400">{s.dept} · {s.semester}</div>
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="p-3 bg-white rounded-xl border border-blue-100">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="text-xs font-bold text-slate-600">Hours Worked</span>
-                                  <Badge color="blue">Public</Badge>
-                                </div>
-                                <div className="flex items-baseline gap-1.5">
-                                  <input type="number" min="0" max="999" defaultValue={hours}
-                                    onBlur={e=>handleUpdateHours(prob.id,s.id,e.target.value)}
-                                    className="w-20 border border-blue-200 rounded-lg px-2 py-1.5 text-lg font-extrabold text-blue-700 text-center focus:outline-none focus:ring-2 focus:ring-blue-400"/>
-                                  <span className="text-xs text-slate-400">/ 60h</span>
-                                </div>
-                                <div className="mt-2"><MeterBar value={hours} max={60} color="bg-blue-400" height="h-2"/></div>
-                              </div>
-                              <div className="p-3 bg-white rounded-xl border border-emerald-100">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="text-xs font-bold text-slate-600">Credits</span>
-                                  <Badge color="violet">Private</Badge>
-                                </div>
-                                <div className="flex items-baseline gap-1.5">
-                                  <input type="number" step="0.1" min="0" max={s.maxCredits} defaultValue={credits}
-                                    onBlur={e=>handleUpdateCredits(prob.id,s.id,e.target.value)}
-                                    className="w-20 border border-emerald-200 rounded-lg px-2 py-1.5 text-lg font-extrabold text-emerald-700 text-center focus:outline-none focus:ring-2 focus:ring-emerald-400"/>
-                                  <span className="text-xs text-slate-400">/ {s.maxCredits}</span>
-                                </div>
-                                <div className="mt-2"><MeterBar value={credits} max={s.maxCredits} color="bg-emerald-500" height="h-2"/></div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Card>
-                );
-              })}
-              {engaged.filter(p=>(p.engagedTeam?.students||[]).length>0).length===0&&(
-                <Card className="py-4"><Empty icon={Award} title="No active teams" subtitle="Once students engage with problems, you can manage their hours and credits here"/></Card>
-              )}
-            </div>
-          )}
+
 
           {/* COMPLETED */}
           {tab==='completed'&&(
@@ -1378,7 +1265,6 @@ function StudentDashboard({ persona, problems, students, setStudents, updateProb
   const tabs=[
     {id:'available',label:'Available Problems',icon:Search},
     {id:'myproject',label:'My Project',icon:Target},
-    {id:'credits',label:'My Credits',icon:Award},
   ];
 
   const LIFECYCLE=['ENGAGED','SOLUTION_PROPOSED','FUNDED','IN_PROGRESS','PROTOTYPE','COMPLETED'];
@@ -1578,61 +1464,7 @@ function StudentDashboard({ persona, problems, students, setStudents, updateProb
             </div>
           )}
 
-          {/* CREDITS — Read-only, university-managed */}
-          {tab==='credits'&&(
-            <div className="space-y-4">
-              <Card className="p-4 border-violet-200 bg-violet-50">
-                <div className="flex items-start gap-2">
-                  <Building2 className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0"/>
-                  <div>
-                    <p className="text-sm font-bold text-violet-800">Credits are managed by your university</p>
-                    <p className="text-xs text-violet-600 mt-0.5">Submit milestones from "My Project" → university reviews → credits are awarded on approval. You cannot self-award credits.</p>
-                  </div>
-                </div>
-              </Card>
 
-              <Card className="p-6">
-                <h2 className="font-bold text-slate-900 mb-4">Academic Credits</h2>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-semibold text-slate-700">Total Credits Earned</span>
-                      <span className="text-xl font-extrabold text-emerald-600">{myCredits} / {myMaxCredits}</span>
-                    </div>
-                    <MeterBar value={myCredits} max={myMaxCredits} color="bg-emerald-500" height="h-3"/>
-                    <p className="text-xs text-slate-400 mt-1">{Math.round((myCredits/myMaxCredits)*100)}% of capstone requirement</p>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-semibold text-slate-700">R&D Hours (University Verified)</span>
-                      <span className="text-xl font-extrabold text-blue-600">{myHours} / 60h</span>
-                    </div>
-                    <MeterBar value={myHours} max={60} color="bg-blue-500" height="h-3"/>
-                  </div>
-                </div>
-              </Card>
-
-              {myPendingMs.length>0&&(
-                <Card className="p-5">
-                  <h3 className="text-sm font-bold text-slate-700 mb-3">Pending Milestone Submissions</h3>
-                  <div className="space-y-2">
-                    {myPendingMs.map(ms=>(
-                      <div key={ms.id} className={`p-3 rounded-xl border text-sm ${ms.status==='PENDING'?'bg-amber-50 border-amber-200':ms.status==='REJECTED'?'bg-rose-50 border-rose-200':'bg-emerald-50 border-emerald-200'}`}>
-                        <div className="flex justify-between items-center">
-                          <span className="font-semibold text-slate-800">{ms.title}</span>
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-slate-400">{ms.hours}h</span>
-                            <span className="text-emerald-600 font-bold">+{(ms.hours*0.12).toFixed(1)} Cr (pending)</span>
-                          </div>
-                        </div>
-                        <p className="text-[10px] text-slate-400 mt-1">{ms.submittedAt} · {ms.status==='PENDING'?'Awaiting university review':ms.status==='REJECTED'?'Revision requested':''}</p>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
-            </div>
-          )}
         </main>
       </div>
 
